@@ -46,6 +46,89 @@ namespace SimpleTCP
 			return this;
 		}
 
+		#region Connect with timeout
+
+		public SimpleTcpClient Connect(string hostNameOrIpAddress, int port, int connectionTimeout)
+		{
+			if (string.IsNullOrEmpty(hostNameOrIpAddress))
+			{
+				throw new ArgumentNullException("hostNameOrIpAddress");
+			}
+
+			var hostEntry = System.Net.Dns.GetHostEntry(hostNameOrIpAddress);
+			var addresses = hostEntry.AddressList;
+
+			DebugInfo("Connecting with timeout");
+			var state = new ConnectState(new TcpClient());
+			var result = state.Client.BeginConnect(addresses, port, EndConnect, state);
+			state.CompletedWithinTimeout = result.AsyncWaitHandle.WaitOne(connectionTimeout, false);
+			DebugInfo("CompletedWithinTimeout: {0}", state.CompletedWithinTimeout);
+
+			if (!state.CompletedWithinTimeout)
+				throw new TimeoutException("Failed to connect within connection timeout.");
+
+			DebugInfo("Waiting for EndConnect to complete");
+			state.Sync.WaitOne();
+
+			DebugInfo("Checking if connection succeeded");
+			if (!state.Client.Connected)
+			{
+				throw state.InnerException
+					?? new ApplicationException("Connection failed without inner exception.");
+			}
+
+			DebugInfo("Starting RxTread");
+			_client = state.Client;
+			StartRxThread();
+
+			DebugInfo("Returning this");
+			return this;
+		}
+
+		void EndConnect(IAsyncResult ar)
+		{
+			DebugInfo("Connection callback started");
+			var state = ar.AsyncState as ConnectState;
+			try
+			{
+				state.Client.Client.EndConnect(ar);
+				DebugInfo("Connection process ended");
+			}
+			catch (Exception ex)
+			{
+				DebugInfo("Ending connection failed: " + ex.Message);
+				state.InnerException = ex;
+			}
+
+			if (state.Client.Connected && !state.CompletedWithinTimeout)
+			{
+				DebugInfo("Connection succeeded after timeout. Closing connection gracefully.");
+				state.Client.Close();
+			}
+			else
+			{
+				DebugInfo("Setting the autoreset event");
+				state.Sync.Set();
+			}
+			DebugInfo("Connection callback ended");
+		}
+
+		class ConnectState
+		{
+			public AutoResetEvent Sync { get; private set; }
+			public TcpClient Client { get; private set; }
+			public bool CompletedWithinTimeout { get; set; }
+			public Exception InnerException { get; set; }
+
+			public ConnectState(TcpClient client)
+			{
+				Sync = new AutoResetEvent(false);
+				Client = client;
+			}
+		}
+
+		#endregion Connect with timeout
+
 		private void StartRxThread()
 		{
 			if (_rxThread != null) { return; }
@@ -230,5 +313,22 @@ namespace SimpleTCP
 			// GC.SuppressFinalize(this);
 		}
 		#endregion
+
+
+		#region Debug logging
+
+		[Conditional("DEBUG")]
+		void DebugInfo(string format, params object[] args)
+		{
+			if (_debugInfoTime == null)
+			{
+				_debugInfoTime = new Stopwatch();
+				_debugInfoTime.Start();
+			}
+			Debug.WriteLine(_debugInfoTime.ElapsedMilliseconds + ": " + format, args);
+		}
+		Stopwatch _debugInfoTime;
+
+		#endregion Debug logging
 	}
 }
