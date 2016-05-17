@@ -173,6 +173,8 @@ namespace SimpleTCP
             _listeners.Clear();
         }
 
+		public bool IsStarted { get { return _listeners.Any(l => l.Listener.Active); } }
+
         public int ConnectedClientsCount
         {
             get {
