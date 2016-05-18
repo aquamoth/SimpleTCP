@@ -19,13 +19,14 @@ namespace SimpleTCP
 		}
 
 		private Thread _rxThread = null;
-		private List<byte> _queuedMsg = new List<byte>();
+		private byte[] _queuedMsg = new byte[0];
 		public byte Delimiter { get; set; }
 		public System.Text.Encoding StringEncoder { get; set; }
 		private TcpClient _client = null;
 
 		public event EventHandler<Message> DelimiterDataReceived;
 		public event EventHandler<Message> DataReceived;
+		public event EventHandler Disconnected;
 
 		internal bool QueueStop { get; set; }
 		internal int ReadLoopIntervalMs { get; set; }
@@ -156,12 +157,12 @@ namespace SimpleTCP
 				{
 					RunLoopStep();
 				}
-				catch
+				catch (Exception ex)
 				{
-
+					DebugInfo(ex.Message);
 				}
 
-				System.Threading.Thread.Sleep(ReadLoopIntervalMs);
+				Thread.Sleep(ReadLoopIntervalMs);
 			}
 
 			_rxThread = null;
@@ -169,42 +170,48 @@ namespace SimpleTCP
 
 		private void RunLoopStep()
 		{
-			if (_client == null) { return; }
-			if (_client.Connected == false) { return; }
-
-			var delimiter = this.Delimiter;
-			var c = _client;
-
-			int bytesAvailable = c.Available;
-			if (bytesAvailable == 0)
+			if (_client == null)
 			{
-				System.Threading.Thread.Sleep(10);
+				DebugInfo("RunLoopStep() run when _client == NULL!");
 				return;
 			}
 
-			List<byte> bytesReceived = new List<byte>();
-
-			while (c.Available > 0 && c.Connected)
+			if (!_client.Connected)
 			{
-				byte[] nextByte = new byte[1];
-				c.Client.Receive(nextByte, 0, 1, SocketFlags.None);
-				bytesReceived.AddRange(nextByte);
-				if (nextByte[0] == delimiter)
+				OnDisconnected(EventArgs.Empty);
+			}
+			else if (_client.Available > 0)
+			{
+				var buffer = new byte[_client.Available];
+				_client.Client.Receive(buffer);
+
+				notifyDelimiterMessagesRx(buffer);
+				NotifyEndTransmissionRx(_client, buffer);
+			}
+		}
+
+		protected virtual void OnDisconnected(EventArgs e)
+		{
+			Disconnected?.Invoke(this, e);
+		}
+
+		private void notifyDelimiterMessagesRx(byte[] buffer)
+		{
+			var bufferStart = 0;
+			for (var i = 0; i < buffer.Length; i++)
+			{
+				if (buffer[i] == this.Delimiter)
 				{
-					byte[] msg = _queuedMsg.ToArray();
-					_queuedMsg.Clear();
-					NotifyDelimiterMessageRx(c, msg);
-				}
-				else
-				{
-					_queuedMsg.AddRange(nextByte);
+					var bufferPart = buffer.Skip(bufferStart).Take(i - bufferStart);
+					bufferStart = i + 1;
+
+					var message = _queuedMsg.Concat(bufferPart).ToArray();
+					_queuedMsg = new byte[0];
+
+					NotifyDelimiterMessageRx(_client, message);
 				}
 			}
-
-			if (bytesReceived.Count > 0)
-			{
-				NotifyEndTransmissionRx(c, bytesReceived.ToArray());
-			}
+			_queuedMsg = buffer.Skip(bufferStart).ToArray();
 		}
 
 		private void NotifyDelimiterMessageRx(TcpClient client, byte[] msg)

@@ -191,6 +191,14 @@ namespace SimpleTCP
             _listeners.Clear();
         }
 
+		public IEnumerable<TcpClient> ConnectedClients
+		{
+			get
+			{
+				return _listeners.SelectMany(l => l.ConnectedClients);
+			}
+		}
+
         public int ConnectedClientsCount
         {
             get {
