@@ -142,6 +142,7 @@ namespace SimpleTCP
 		public SimpleTcpClient Disconnect()
 		{
 			if (_client == null) { return this; }
+			QueueStop = true;
 			_client.Close();
 			_client = null;
 			return this;
@@ -192,6 +193,7 @@ namespace SimpleTCP
 
 		protected virtual void OnDisconnected(EventArgs e)
 		{
+			QueueStop = true;
 			Disconnected?.Invoke(this, e);
 		}
 
