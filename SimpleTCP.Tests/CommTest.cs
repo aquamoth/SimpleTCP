@@ -52,12 +52,12 @@ namespace SimpleTCP.Tests
             {
                 if (_clientTx[i] != _serverRx[i])
                 {
-                    Assert.Fail("Client TX " + i.ToString() + " did not match server RX " + i.ToString());
+                    Assert.Fail("Client {0} sent \"{1}\" but server received \"{2}\"", i, _clientTx[i], _serverRx[i]);
                 }
 
                 if (_serverTx[i] != _clientRx[i])
                 {
-                    Assert.Fail("Client RX " + i.ToString() + " did not match server TX " + i.ToString());
+					Assert.Fail("Server sent \"{2}\" but client {0} received \"{1}\"", i, _clientRx[i], _serverTx[i]);
                 }
             }
 
